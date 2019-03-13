@@ -166,11 +166,19 @@ let draw = (state, env) => {
   Draw.background(Constants.white, env);
   drawGameBoard(state.board, env);
   fillPiece(state.piece, env);
-  /*         if (timeTick^ > 1.0) {
-                                  /*increaseDeltaRow();*/
-                                  timeTick := 0.0;
-             };*/
-  state;
+  let nextState = increaseDeltaRow(state);
+
+  switch (timeTick^ > 1.0, Board.isCollide(nextState.board, nextState.piece)) {
+  | (true, false) =>
+    timeTick := 0.0;
+    nextState;
+  | (true, true) =>
+    timeTick := 0.0;
+    let newState = freezePiece(state, env);
+    let newPiece = makeNewPiece();
+    {...newState, piece: newPiece};
+  | (false, _) => state
+  };
 };
 
 run(
