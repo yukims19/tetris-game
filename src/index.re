@@ -25,7 +25,7 @@ let shapes: list(Shapes.shape) = [Z, S, T, O, L, I, J];
 let makeInitialState = () => {
   timeTick := 0.0;
   let gameBoard = Board.init(15, 10);
-  let tempPiece: Board.piece = {shape: Z, rotation: 1, dRow: 0, dCol: 2};
+  let tempPiece: Board.piece = {shape: Z, rotation: 0, dRow: 0, dCol: 2};
   {board: gameBoard, piece: tempPiece};
 };
 
@@ -37,7 +37,7 @@ let setup = env => {
 let makeNewPiece = (): Board.piece => {
   let totalShapeNum = List.length(shapes);
   let newShape = List.nth(shapes, Random.int(totalShapeNum));
-  {shape: newShape, rotation: 1, dRow: 0, dCol: 2};
+  {shape: newShape, rotation: 0, dRow: 0, dCol: 2};
 };
 
 let drawGameBoard = (gameBoard, env) =>
@@ -131,6 +131,20 @@ let decreaseDeltaCol = ({piece} as state): state => {
   },
 };
 
+let rotatePiece = ({piece} as state): state => {
+  let variationNum = Shapes.getShapeVariationNum(piece.shape);
+  let newRotation = (piece.rotation + 1) mod variationNum;
+  {
+    ...state,
+    piece: {
+      shape: piece.shape,
+      rotation: newRotation,
+      dRow: piece.dRow,
+      dCol: piece.dCol,
+    },
+  };
+};
+
 let freezePiece = ({piece} as state, env): state => {
   fillPiece(piece, env);
   let newBoard = Board.setPiece(state.board, state.piece);
@@ -198,10 +212,17 @@ run(
               };
             }
           )
-
-        | Rotate
-        | Other
-        | Tick => (state => state)
+        | Rotate => (
+            state => {
+              let nextState = rotatePiece(state);
+              switch (Board.isCollide(nextState.board, nextState.piece)) {
+              | false => nextState
+              | true => state
+              };
+            }
+          )
+        | Tick
+        | Other => (state => state)
         };
       action(state);
     },
