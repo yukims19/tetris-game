@@ -1,205 +1,209 @@
 open Reprocessing;
+open Helper;
 
-let size = 600;
-let sizef = float(size);
-
-type bodyT = {
-  pos: (float, float),
-  vel: (float, float),
-  angle: float,
+type state = {
+  board: Board.t,
+  piece: Board.piece,
 };
 
-type bulletT = {
-  created: int,
-  body: bodyT,
-};
+type action =
+  | Right
+  | Left
+  | Down
+  | Rotate
+  | Reset
+  | Tick
+  | Other;
 
-type stateT = {
-  player: bodyT,
-  asteroids: list(bodyT),
-  bullets: list(bulletT),
-  lastBulletCreated: int,
-};
+let canvasWidth = 300;
+let canvasHeight = 400;
+let rectWidth = 20;
+let rectHeight = 20;
+let timeTick = ref(0.0);
+let shapes: list(Shapes.shape) = [Z, S, T, O, L, I, J];
 
 let makeInitialState = () => {
-  let asteroids =
-    Array.init(10, _ =>
-      {
-        pos: (Random.float(sizef), Random.float(sizef)),
-        vel: (Random.float(2.0) -. 1.0, Random.float(2.0) -. 1.0),
-        angle: 0.,
-      }
-    );
-  {
-    player: {
-      pos: (sizef /. 2.0, sizef /. 2.0),
-      vel: (0.0, 0.0),
-      angle: -. Constants.half_pi,
-    },
-    asteroids: Array.to_list(asteroids),
-    bullets: [],
-    lastBulletCreated: 0,
-  };
+  timeTick := 0.0;
+  let gameBoard = Board.init(15, 10);
+  let tempPiece: Board.piece = {shape: Z, rotation: 1, dRow: 0, dCol: 2};
+  {board: gameBoard, piece: tempPiece};
 };
 
 let setup = env => {
-  Env.size(~width=size, ~height=size, env);
+  Env.size(~width=canvasWidth, ~height=canvasHeight, env);
   makeInitialState();
 };
 
-let drawPlayer = (player, env) => {
-  let (x, y) = player.pos;
-  Draw.pushMatrix(env);
-  Draw.translate(~x, ~y, env);
-  Draw.rotate(player.angle, env);
-  Draw.trianglef(
-    ~p1=(0.0, 0.0),
-    ~p2=((-20.0), 5.0),
-    ~p3=((-20.0), (-5.0)),
+let makeNewPiece = (): Board.piece => {
+  let totalShapeNum = List.length(shapes);
+  let newShape = List.nth(shapes, Random.int(totalShapeNum));
+  {shape: newShape, rotation: 1, dRow: 0, dCol: 2};
+};
+
+let drawGameBoard = (gameBoard, env) =>
+  Array.iteri(
+    (idxR, row) =>
+      Array.iteri(
+        (idxC, col) =>
+          switch (col) {
+          | 0 =>
+            Draw.noFill(env);
+            Draw.stroke(Constants.black, env);
+            Draw.rect(
+              ~pos=(idxC * rectHeight, idxR * rectWidth),
+              ~width=rectWidth,
+              ~height=rectHeight,
+              env,
+            );
+          | 9 => ()
+          | _ =>
+            Draw.fill(Constants.black, env);
+            Draw.stroke(Constants.black, env);
+            Draw.rect(
+              ~pos=(idxC * rectHeight, idxR * rectWidth),
+              ~width=rectWidth,
+              ~height=rectHeight,
+              env,
+            );
+          },
+        row,
+      ),
+    gameBoard,
+  );
+
+let fillSquare = ((col, row), color, env) => {
+  Draw.fill(color, env);
+  Draw.rect(
+    ~pos=(col * rectHeight, row * rectWidth),
+    ~width=rectWidth,
+    ~height=rectHeight,
     env,
   );
-  Draw.popMatrix(env);
+  ();
 };
 
-let asteroidRadius = 20.0;
-
-let drawAsteroid = (asteroid, env) => {
-  let (x, y) = asteroid.pos;
-  Draw.pushMatrix(env);
-  Draw.translate(~x, ~y, env);
-  Draw.ellipsef(
-    ~center=(0.0, 0.0),
-    ~radx=asteroidRadius,
-    ~rady=asteroidRadius,
-    env,
+let fillPiece = (piece, env) => {
+  let points = Board.getShapePoints(piece);
+  List.iter(
+    ((col, row)) =>
+      fillSquare((piece.dCol + col, piece.dRow + row), Constants.black, env),
+    points,
   );
-
-  Draw.popMatrix(env);
 };
 
-let drawBullet = (bullet, env) => {
-  let (x, y) = bullet.body.pos;
-  Draw.pushMatrix(env);
-  Draw.translate(~x, ~y, env);
-  Draw.ellipsef(~center=(0.0, 0.0), ~radx=1., ~rady=1., env);
-  Draw.popMatrix(env);
+let increaseDeltaRow = ({piece} as state): state => {
+  ...state,
+  piece: {
+    shape: piece.shape,
+    rotation: piece.rotation,
+    dRow: piece.dRow + 1,
+    dCol: piece.dCol,
+  },
 };
 
-let collidesWith = (a, b) => {
-  let distance = Utils.distf(~p1=a.pos, ~p2=b.pos);
-  distance < asteroidRadius;
+let decreaseDeltaRow = ({piece} as state): state => {
+  ...state,
+  piece: {
+    shape: piece.shape,
+    rotation: piece.rotation,
+    dRow: piece.dRow - 1,
+    dCol: piece.dCol,
+  },
 };
 
-let directionVector = angle => {
-  let scale = 0.1;
-  (scale *. cos(angle), scale *. sin(angle));
+let increaseDeltaCol = ({piece} as state): state => {
+  ...state,
+  piece: {
+    shape: piece.shape,
+    rotation: piece.rotation,
+    dRow: piece.dRow,
+    dCol: piece.dCol + 1,
+  },
 };
 
-let onRight = (player, env) =>
-  if (Env.key(Right, env)) {
-    {...player, angle: player.angle +. 0.1};
-  } else {
-    player;
+let decreaseDeltaCol = ({piece} as state): state => {
+  ...state,
+  piece: {
+    shape: piece.shape,
+    rotation: piece.rotation,
+    dRow: piece.dRow,
+    dCol: piece.dCol - 1,
+  },
+};
+
+let freezePiece = ({piece} as state, env): state => {
+  fillPiece(piece, env);
+  let newBoard = Board.setPiece(state.board, state.piece);
+  {...state, board: newBoard};
+};
+
+let envToAction = env =>
+  switch (Env.keyCode(env)) {
+  | Space => Reset
+  | Right => Right
+  | Left => Left
+  | Down => Down
+  | Up => Rotate
+  | _ => Other
   };
-
-let onLeft = (player, env) =>
-  if (Env.key(Left, env)) {
-    {...player, angle: player.angle -. 0.1};
-  } else {
-    player;
-  };
-
-let onUp = (player, env) =>
-  if (Env.key(Up, env)) {
-    let (dx, dy) = directionVector(player.angle);
-    let (x, y) = player.vel;
-    {...player, vel: (x +. dx, y +. dy)};
-  } else {
-    player;
-  };
-
-let scaleVec = ((x, y), ~by) => (by *. x, by *. y);
-
-let onSpace = (state, env) => {
-  let player = state.player;
-  if (Env.key(Space, env)) {
-    let frameCount = Env.frameCount(env);
-    /* Allow a bullet every 15 frames. */
-    if (frameCount - state.lastBulletCreated > 15) {
-      let newBullet = {
-        created: frameCount,
-        body: {
-          pos: player.pos,
-          vel: scaleVec(directionVector(player.angle), ~by=20.),
-          angle: 0.,
-        },
-      };
-      {
-        ...state,
-        lastBulletCreated: frameCount,
-        bullets: [newBullet, ...state.bullets],
-      };
-    } else {
-      state;
-    };
-  } else {
-    state;
-  };
-};
-
-let wrap = x => x > sizef ? 0. : x < 0. ? sizef : x;
-let wrap = ((x, y)) => (wrap(x), wrap(y));
-
-let updatePos = body => {
-  let (x, y) = body.pos;
-  let (dx, dy) = body.vel;
-  {...body, pos: (x +. dx, y +. dy) |> wrap};
-};
-
-let updateBulletPos = bullet => {...bullet, body: updatePos(bullet.body)};
-
-let filterBullets = (bullets, env) => {
-  /* Remove bullets that are over 300 frames old. */
-  let frameCount = Env.frameCount(env);
-  bullets |> List.filter(bullet => frameCount - bullet.created < 30 * 10);
-};
-
-let updateBullets = (state, env) => {
-  let bullets = state.bullets;
-  let bullets = bullets |> List.map(updateBulletPos);
-  let bullets = filterBullets(bullets, env);
-  {...state, bullets};
-};
 
 let draw = (state, env) => {
-  Draw.background(Constants.black, env);
-  Draw.noFill(env);
-  Draw.stroke(Constants.white, env);
-  Draw.strokeWeight(1, env);
-  let player = state.player;
-  drawPlayer(player, env);
-  state.asteroids |> List.iter(asteroid => drawAsteroid(asteroid, env));
-  state.bullets |> List.iter(b => drawBullet(b, env));
-  let asteroids = state.asteroids |> List.map(updatePos);
-  let player = onRight(player, env);
-  let player = onLeft(player, env);
-  let player = onUp(player, env);
-  let player = updatePos(player);
-  let state = onSpace(state, env);
-  let state = updateBullets(state, env);
-  let asteroids =
-    asteroids
-    |> List.filter(a =>
-         !(
-           state.bullets
-           |> List.exists(bullet => collidesWith(bullet.body, a))
-         )
-       );
-  if (asteroids |> List.exists(collidesWith(player))) {
-    makeInitialState();
-  } else {
-    {...state, player, asteroids};
-  };
+  timeTick := timeTick^ +. Env.deltaTime(env);
+  Draw.background(Constants.white, env);
+  drawGameBoard(state.board, env);
+  fillPiece(state.piece, env);
+  /*         if (timeTick^ > 1.0) {
+                                  /*increaseDeltaRow();*/
+                                  timeTick := 0.0;
+             };*/
+  state;
 };
 
-run(~setup, ~draw, ~mouseDown=(_, _env) => makeInitialState(), ());
+run(
+  ~setup,
+  ~draw,
+  ~keyTyped=
+    (state, env) => {
+      print_endline("pressed");
+      let action =
+        switch (envToAction(env)) {
+        | Reset => (_state => makeInitialState())
+        | Right => (
+            state => {
+              let nextState = increaseDeltaCol(state);
+              switch (Board.isCollide(nextState.board, nextState.piece)) {
+              | false => nextState
+              | true => state
+              };
+            }
+          )
+        | Left => (
+            state => {
+              let nextState = decreaseDeltaCol(state);
+              switch (Board.isCollide(nextState.board, nextState.piece)) {
+              | false => nextState
+              | true => state
+              };
+            }
+          )
+        | Down => (
+            state => {
+              let nextState = increaseDeltaRow(state);
+              switch (Board.isCollide(nextState.board, nextState.piece)) {
+              | false => nextState
+              | true =>
+                let newState = freezePiece(state, env);
+                let newPiece = makeNewPiece();
+                {...newState, piece: newPiece};
+              };
+            }
+          )
+
+        | Rotate
+        | Other
+        | Tick => (state => state)
+        };
+      action(state);
+    },
+  (),
+);
