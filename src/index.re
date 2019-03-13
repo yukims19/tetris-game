@@ -25,7 +25,7 @@ let shapes: list(Shapes.shape) = [Z, S, T, O, L, I, J];
 let makeInitialState = () => {
   timeTick := 0.0;
   let gameBoard = Board.init(15, 10);
-  let tempPiece: Board.piece = {shape: Z, rotation: 0, dRow: 0, dCol: 2};
+  let tempPiece: Board.piece = {shape: O, rotation: 0, dRow: 0, dCol: 2};
   {board: gameBoard, piece: tempPiece};
 };
 
