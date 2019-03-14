@@ -149,7 +149,8 @@ let freezePiece = ({piece} as state, env): state => {
   fillPiece(piece, env);
   let newBoardWithPiece = Board.setPiece(state.board, state.piece);
   let newBoard = Board.removeIfPieceFillRow(newBoardWithPiece, piece);
-  {...state, board: newBoard};
+  Board.isBoardTopTouched(newBoard) ?
+    makeInitialState() : {...state, board: newBoard};
 };
 
 let envToAction = env =>

@@ -141,6 +141,15 @@ module Board = {
        );
     gameBoard;
   };
+
+  let isBoardTopTouched = (gameBoard: t) => {
+    let topRowFilledNum =
+      gameBoard[0]
+      |> Array.to_list
+      |> List.filter(block => block > 0 && block < wallValue)
+      |> List.length;
+    topRowFilledNum > 0;
+  };
 };
 /* TODO:
    [x] represent shapes as points
