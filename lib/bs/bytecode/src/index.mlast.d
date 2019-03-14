@@ -1,1 +1,1 @@
-src/index.cmo :
+src/index.cmo : src/helper.cmo src/Shapes.cmo
