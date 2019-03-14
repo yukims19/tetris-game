@@ -44,12 +44,8 @@ module Board = {
 
   let isFill = (gameBoard: t, row, col): bool =>
     switch (get(gameBoard, row, col)) {
-    | None =>
-      print_endline("None");
-      true;
-    | Some(value) =>
-      print_endline("Some");
-      value > 0 ? true : false;
+    | None => true
+    | Some(value) => value > 0 ? true : false
     };
 
   let printBoard = gameBoard =>
@@ -69,10 +65,12 @@ module Board = {
 
   let getAbsolutePoints = piece: list(Shapes.point) =>
     getShapePoints(piece)
-    |> List.map(point => {
-         let (col, row) = point;
-         (col + piece.dCol, row + piece.dRow);
-       });
+    |> List.map(((col, row)) => (col + piece.dCol, row + piece.dRow));
+
+  let getAbsoluteRows = piece: list(int) =>
+    getShapePoints(piece)
+    |> List.map(((_col, row)) => row + piece.dRow)
+    |> List.sort_uniq((first, later) => compare(first, later));
 
   let setPiece = (gameBoard: t, piece: piece) => {
     getAbsolutePoints(piece)
@@ -91,7 +89,6 @@ module Board = {
       | [] => false
       | [head, ...tail] =>
         let (col, row) = head;
-        printPoint(head);
         switch (isFill(gameBoard, row, col)) {
         | false => checkPoint(tail)
         | true => true
@@ -99,8 +96,52 @@ module Board = {
       };
     checkPoint(absPoints);
   };
-};
 
+  let isRowFull = (gameBoard: t, row): bool => {
+    let emptyBlockNum =
+      Array.to_list(gameBoard[row])
+      |> List.filter(block => block == 0)
+      |> List.length;
+    emptyBlockNum == 0;
+  };
+
+  let newEmptyRow = (gameBoard: t) => {
+    let colNum = colNum(gameBoard);
+    let newRow = Array.make(colNum, 0);
+    newRow[0] = wallValue;
+    newRow[colNum - 1] = wallValue;
+    newRow;
+  };
+
+  let emptyRow = (gameBoard: t, row) => {
+    print_endline("emptyRow");
+    for (r in row downto 0) {
+      print_endline("loop");
+      print_endline(string_of_int(r));
+      switch (r) {
+      | 0 =>
+        print_endline("newEmptyRow");
+        gameBoard[r] = newEmptyRow(gameBoard);
+      | _ =>
+        print_endline("Replace!!");
+        gameBoard[r] = newEmptyRow(gameBoard);
+        gameBoard[r] = gameBoard[r - 1];
+      };
+    };
+    ();
+  };
+
+  let removeIfPieceFillRow = (gameBoard: t, piece) => {
+    getAbsoluteRows(piece)
+    |> List.iter(row =>
+         switch (isRowFull(gameBoard, row)) {
+         | false => ()
+         | true => emptyRow(gameBoard, row)
+         }
+       );
+    gameBoard;
+  };
+};
 /* TODO:
    [x] represent shapes as points
    [x] piece:{
